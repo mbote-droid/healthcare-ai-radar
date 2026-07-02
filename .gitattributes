@@ -1,0 +1,8 @@
+# Normalise line endings across platforms so the repo stays clean on Windows,
+# macOS and Linux. Text files are stored with LF in the repo.
+* text=auto eol=lf
+
+*.py   text eol=lf
+*.md   text eol=lf
+*.txt  text eol=lf
+*.example text eol=lf

@@ -1,0 +1,18 @@
+# Core runtime (pinned with upper bounds to avoid surprise major bumps)
+requests>=2.31,<3
+feedparser>=6.0,<7
+python-dateutil>=2.8,<3
+loguru>=0.7,<0.8
+python-dotenv>=1.0,<2
+
+# Browser TLS impersonation - lets the fetcher retrieve Cloudflare-protected
+# feeds (e.g. Healthcare IT News) without a headless browser. Optional: the tool
+# still runs if it is absent, it just skips bot-blocked sources.
+curl_cffi>=0.7,<1
+
+# Testing
+pytest>=8.0,<10
+
+# Optional LLM summariser (uncomment to enable Google AI Studio summaries):
+#   set RADAR_LLM_PROVIDER=google and GOOGLE_API_KEY in your environment.
+# google-genai>=0.3
