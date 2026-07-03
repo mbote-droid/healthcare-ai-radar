@@ -60,9 +60,10 @@ Python 3.11+ recommended. Core dependencies: `requests`, `feedparser`,
 ## Usage
 
 ```bash
-python main.py run                 # fetch, rank and write today's digest
-python main.py run --top-n 15      # more stories in the Top Scoops section
-python main.py run --no-llm        # force deterministic extractive summaries
+python main.py run                    # fetch, rank and write today's digest
+python main.py run --top-n 15         # more stories in the Top Scoops section
+python main.py run --no-llm           # force deterministic extractive summaries
+python main.py run --new-only --email # email only stories new since last run
 ```
 
 Output lands in `output/`:
@@ -90,13 +91,41 @@ variables: `RADAR_LOOKBACK_DAYS`, `RADAR_MAX_ITEMS_PER_SOURCE`,
 `RADAR_HTTP_TIMEOUT`, `ENTREZ_EMAIL` (polite PubMed identification), and the LLM
 settings above. Sources are a simple edit away in the same file.
 
+## Automated email digests (scheduled)
+
+The included GitHub Actions workflow ([.github/workflows/digest.yml](.github/workflows/digest.yml))
+runs the pipeline **in the cloud every 4 hours** and emails you only the stories
+that are new since the previous run - so you get fresh healthcare-AI news on your
+phone without your laptop being on. It tracks what you've already been sent in a
+small committed state file (`state/seen.json`), pruned by age.
+
+To enable it:
+
+1. **Create a Gmail App Password** (one-time): turn on 2-Step Verification, then
+   go to Google Account -> Security -> App passwords, and generate a 16-character
+   password. (App passwords are required; your normal login password will not
+   work for SMTP.)
+2. **Add repository secrets**: in the repo, Settings -> Secrets and variables ->
+   Actions -> New repository secret, add:
+   - `EMAIL_USERNAME` - your Gmail address
+   - `EMAIL_PASSWORD` - the 16-character App Password
+   - `EMAIL_TO` - where to receive the digest (can be the same address)
+3. The workflow then runs on its schedule. You can also trigger it manually from
+   the **Actions** tab ("Run workflow").
+
+Notes: the **first** run has no history, so it emails the full current set; every
+run after that emails only new items. CI uses `--no-llm` (no API key needed); to
+get LLM-polished summaries in the email, add a `GOOGLE_API_KEY` secret and remove
+`--no-llm` from the workflow. Secrets are encrypted and never exposed in logs,
+even on a public repo.
+
 ## Tests
 
 ```bash
 python -m pytest tests/ -q
 ```
 
-59 tests, fully offline (HTTP mocked, feeds parsed from in-memory XML, the LLM
+73 tests, fully offline (HTTP mocked, feeds parsed from in-memory XML, the LLM
 tier stubbed). They cover models, relevance/classification, scoring, dedup,
 summarisation guardrails, every fetcher's parse and graceful-degradation paths,
 rendering, and an end-to-end pipeline run.

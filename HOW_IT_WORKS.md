@@ -83,6 +83,22 @@ Entry point: `python main.py run`
 
 ---
 
+## Stage 9 - Delivery (optional: `--new-only` / `--email`)
+21. **New-only** (`radar.state.SeenStore`): the run loads a small committed
+    `state/seen.json` of story keys already delivered and keeps only the ones not
+    seen before. The written digest file stays the *full* ranking; only the email
+    is filtered to what's new.
+22. **Email** (`radar.emailer` + `radar.email_render`): if `EMAIL_*` is
+    configured and there are new stories, an HTML email of the new items is sent
+    over SMTP. Missing credentials or zero new stories -> no email, no error.
+23. **State update**: only after a *successful* send are the new keys recorded
+    (and old ones pruned by age) and the state saved. A failed email therefore
+    retries those stories next run instead of losing them.
+24. **Scheduling**: the GitHub Actions workflow runs steps 1-23 every 4 hours in
+    the cloud with `--new-only --email`, then commits the updated `seen.json` so
+    the next run knows what was already delivered. No always-on server; each run
+    is a one-shot fetch-and-send on a timer.
+
 ## Failure behaviour (graceful degradation, by design)
 - No network -> every fetch returns empty, the run still completes and writes an
   (empty) digest rather than crashing.

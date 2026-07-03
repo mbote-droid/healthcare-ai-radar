@@ -18,8 +18,11 @@ from pathlib import Path
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 OUTPUT_DIR: Path = BASE_DIR / "output"
 LOG_DIR: Path = BASE_DIR / "logs"
+# State is committed (unlike output/logs) so "new since last run" persists
+# across ephemeral CI runners.
+STATE_DIR: Path = BASE_DIR / "state"
 
-for _d in (OUTPUT_DIR, LOG_DIR):
+for _d in (OUTPUT_DIR, LOG_DIR, STATE_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 # Load a local .env (if present) BEFORE any os.getenv below, so the documented
@@ -80,6 +83,23 @@ IMPERSONATE_PROFILE: str = os.getenv("RADAR_IMPERSONATE", "chrome").strip()
 
 # NCBI asks that E-utilities callers identify themselves by email.
 ENTREZ_EMAIL: str = os.getenv("ENTREZ_EMAIL", "").strip()
+
+# --------------------------------------------------------------------------- #
+# "New since last run" state + email delivery (used by the scheduled job)
+# --------------------------------------------------------------------------- #
+SEEN_FILE: Path = STATE_DIR / "seen.json"
+# Forget stories older than this so the state file cannot grow without bound.
+SEEN_PRUNE_DAYS: int = _env_int("RADAR_SEEN_PRUNE_DAYS", 30)
+
+# Email (SMTP). Empty username/password => emailing is skipped gracefully.
+EMAIL_HOST: str = os.getenv("EMAIL_HOST", "smtp.gmail.com").strip()
+EMAIL_PORT: int = _env_int("EMAIL_PORT", 587)
+EMAIL_USERNAME: str = os.getenv("EMAIL_USERNAME", "").strip()
+# Gmail shows app passwords as 4 space-separated groups; the real secret has no
+# spaces, so strip them to be forgiving of a copy-paste with spaces.
+EMAIL_PASSWORD: str = os.getenv("EMAIL_PASSWORD", "").replace(" ", "")
+EMAIL_FROM: str = os.getenv("EMAIL_FROM", "").strip() or EMAIL_USERNAME
+EMAIL_TO: str = os.getenv("EMAIL_TO", "").strip() or EMAIL_USERNAME
 
 # --------------------------------------------------------------------------- #
 # Optional LLM summariser. Default "none" => deterministic extractive summary.

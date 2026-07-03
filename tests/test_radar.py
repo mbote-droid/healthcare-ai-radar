@@ -14,8 +14,12 @@ import pytest
 
 import main
 from config import settings
-from radar import classify, dedup, pipeline, render, score, sources, summarise
+from radar import (
+    classify, dedup, email_render, emailer, pipeline, render, score, sources,
+    summarise,
+)
 from radar.models import Article, Digest, normalise_title
+from radar.state import SeenStore
 
 UTC = timezone.utc
 
@@ -495,3 +499,175 @@ class TestPipelineAndCLI:
                              "json": tmp_path / "d.json"},
         )
         assert main.main(["run", "--no-llm"]) == 0
+
+
+# --------------------------------------------------------------------------- #
+class TestSeenStore:
+    def test_filter_new_excludes_seen(self, tmp_path):
+        store = SeenStore(tmp_path / "seen.json")
+        a, b = mk(url="https://x.com/a"), mk(url="https://x.com/b")
+        store.record([a])
+        new = store.filter_new([a, b])
+        assert [n.url for n in new] == ["https://x.com/b"]
+
+    def test_persistence_round_trip(self, tmp_path):
+        path = tmp_path / "seen.json"
+        a = mk(url="https://x.com/a")
+        s1 = SeenStore(path)
+        s1.record([a])
+        s1.save()
+        s2 = SeenStore(path).load()
+        assert not s2.is_new(a)  # remembered across instances
+
+    def test_corrupt_file_starts_fresh(self, tmp_path):
+        path = tmp_path / "seen.json"
+        path.write_text("{not valid json", encoding="utf-8")
+        store = SeenStore(path).load()
+        assert len(store) == 0
+
+    def test_prune_drops_old_entries(self, tmp_path):
+        now = datetime(2025, 7, 1, tzinfo=UTC)
+        store = SeenStore(tmp_path / "seen.json")
+        store.record([mk(url="https://x.com/old")], now=now - timedelta(days=60))
+        store.record([mk(url="https://x.com/new")], now=now)
+        store.prune(now=now, days=30)
+        assert len(store) == 1
+
+    def test_record_preserves_first_seen(self, tmp_path):
+        store = SeenStore(tmp_path / "seen.json")
+        a = mk(url="https://x.com/a")
+        t1 = datetime(2025, 6, 1, tzinfo=UTC)
+        store.record([a], now=t1)
+        store.record([a], now=datetime(2025, 6, 15, tzinfo=UTC))
+        assert store._seen[a.dedup_key] == t1.isoformat()
+
+
+# --------------------------------------------------------------------------- #
+class TestEmailRender:
+    def test_html_contains_stories_and_scores(self):
+        now = datetime(2025, 7, 1, 12, 0, tzinfo=UTC)
+        a = mk(title="FDA clears AI tool", tier="official", published=now,
+               summary="Cleared for market")
+        classify.classify_article(a)
+        score.compute_score(a, now)
+        html = email_render.render_email_html([a], now)
+        assert "Healthcare AI Radar" in html
+        assert "FDA clears AI tool" in html
+        assert "1 new story" in html
+
+    def test_html_escapes_injection(self):
+        now = datetime(2025, 7, 1, tzinfo=UTC)
+        a = mk(title="Evil <script>alert(1)</script>", summary="x")
+        html = email_render.render_email_html([a], now)
+        assert "<script>alert(1)</script>" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_html_handles_empty(self):
+        now = datetime(2025, 7, 1, tzinfo=UTC)
+        html = email_render.render_email_html([], now)
+        assert "No new stories" in html
+
+
+# --------------------------------------------------------------------------- #
+class _FakeSMTP:
+    """Context-manager stand-in for smtplib.SMTP."""
+    instances: list = []
+
+    def __init__(self, host, port, timeout=None, fail_on=None):
+        self.host, self.port = host, port
+        self.logged_in = False
+        self.sent = False
+        _FakeSMTP.instances.append(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def starttls(self, context=None):
+        pass
+
+    def login(self, user, password):
+        self.logged_in = True
+
+    def send_message(self, msg):
+        self.sent = True
+
+
+class TestEmailer:
+    def test_config_none_without_credentials(self, monkeypatch):
+        monkeypatch.setattr(settings, "EMAIL_USERNAME", "")
+        monkeypatch.setattr(settings, "EMAIL_PASSWORD", "")
+        assert emailer.email_config_from_settings() is None
+
+    def test_config_built_when_credentials_present(self, monkeypatch):
+        monkeypatch.setattr(settings, "EMAIL_USERNAME", "me@gmail.com")
+        monkeypatch.setattr(settings, "EMAIL_PASSWORD", "app-password")
+        monkeypatch.setattr(settings, "EMAIL_TO", "me@gmail.com")
+        cfg = emailer.email_config_from_settings()
+        assert cfg is not None and cfg.recipient == "me@gmail.com"
+
+    def test_send_email_success(self, monkeypatch):
+        _FakeSMTP.instances.clear()
+        monkeypatch.setattr(emailer.smtplib, "SMTP", _FakeSMTP)
+        cfg = emailer.EmailConfig("h", 587, "u", "p", "from@x", "to@x")
+        ok = emailer.send_email("subj", "<b>hi</b>", cfg)
+        assert ok is True
+        assert _FakeSMTP.instances[-1].logged_in and _FakeSMTP.instances[-1].sent
+
+    def test_send_email_failure_returns_false(self, monkeypatch):
+        def boom(*a, **k):
+            raise OSError("connection refused")
+        monkeypatch.setattr(emailer.smtplib, "SMTP", boom)
+        cfg = emailer.EmailConfig("h", 587, "u", "p", "from@x", "to@x")
+        assert emailer.send_email("subj", "<b>hi</b>", cfg) is False
+
+
+# --------------------------------------------------------------------------- #
+class TestDeliver:
+    def test_new_only_emails_new_and_records_state(self, monkeypatch, tmp_path):
+        now = datetime(2025, 7, 1, tzinfo=UTC)
+        seen_path = tmp_path / "seen.json"
+        monkeypatch.setattr(settings, "SEEN_FILE", seen_path)
+
+        old = mk(url="https://x.com/old", title="Old AI story")
+        new = mk(url="https://x.com/new", title="New AI story")
+        pre = SeenStore(seen_path)  # pre-seed 'old' as already seen
+        pre.record([old], now)
+        pre.save()
+
+        digest = Digest(generated_at=now, articles=[old, new])
+        cfg = emailer.EmailConfig("h", 587, "u", "p", "f@x", "t@x")
+        monkeypatch.setattr(emailer, "email_config_from_settings", lambda: cfg)
+        sent_to = {}
+        monkeypatch.setattr(
+            emailer, "send_email",
+            lambda subject, html, config: sent_to.update(subject=subject, html=html) or True,
+        )
+
+        main._deliver(digest, new_only=True, do_email=True, now=now)
+
+        # Only the new story is emailed, and it is now recorded as seen.
+        assert "New AI story" in sent_to["html"]
+        assert "Old AI story" not in sent_to["html"]
+        after = SeenStore(seen_path).load()
+        assert not after.is_new(new)
+
+    def test_no_email_when_nothing_new(self, monkeypatch, tmp_path):
+        now = datetime(2025, 7, 1, tzinfo=UTC)
+        seen_path = tmp_path / "seen.json"
+        monkeypatch.setattr(settings, "SEEN_FILE", seen_path)
+        a = mk(url="https://x.com/a")
+        pre = SeenStore(seen_path)
+        pre.record([a], now)
+        pre.save()
+
+        monkeypatch.setattr(emailer, "email_config_from_settings",
+                            lambda: emailer.EmailConfig("h", 1, "u", "p", "f", "t"))
+        calls = {"n": 0}
+        monkeypatch.setattr(emailer, "send_email",
+                            lambda *a, **k: calls.__setitem__("n", calls["n"] + 1) or True)
+        digest = Digest(generated_at=now, articles=[a])
+        main._deliver(digest, new_only=True, do_email=True, now=now)
+        assert calls["n"] == 0  # nothing new -> no send
