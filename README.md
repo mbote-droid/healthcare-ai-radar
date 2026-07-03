@@ -13,6 +13,11 @@ Built to run on modest hardware with no GPU and no mandatory API keys. An LLM
 summariser is optional; without it the tool falls back to deterministic
 extractive summaries, so it always works.
 
+![Healthcare AI Radar - a live run](assets/demo.gif)
+
+> A real run: nine sources fetched (with automatic recovery from Cloudflare-blocked
+> feeds), filtered, de-duplicated, ranked, and written to a digest.
+
 ---
 
 ## Why this exists
@@ -91,7 +96,7 @@ settings above. Sources are a simple edit away in the same file.
 python -m pytest tests/ -q
 ```
 
-53 tests, fully offline (HTTP mocked, feeds parsed from in-memory XML, the LLM
+59 tests, fully offline (HTTP mocked, feeds parsed from in-memory XML, the LLM
 tier stubbed). They cover models, relevance/classification, scoring, dedup,
 summarisation guardrails, every fetcher's parse and graceful-degradation paths,
 rendering, and an end-to-end pipeline run.
@@ -133,3 +138,7 @@ tests/test_radar.py    offline test suite
 Kept intentionally small for now. Natural next steps: medRxiv/bioRxiv and
 company-blog sources, a scheduled daily run, an email/Markdown-to-HTML export,
 and a simple web dashboard over the JSON sidecar.
+
+## License
+
+Released under the [MIT License](LICENSE).
