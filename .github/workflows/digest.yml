@@ -28,6 +28,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Check email secrets are present (values never printed)
+        env:
+          U: ${{ secrets.EMAIL_USERNAME }}
+          P: ${{ secrets.EMAIL_PASSWORD }}
+          T: ${{ secrets.EMAIL_TO }}
+        run: |
+          [ -n "$U" ] && echo "EMAIL_USERNAME: present" || echo "EMAIL_USERNAME: MISSING"
+          [ -n "$P" ] && echo "EMAIL_PASSWORD: present (${#P} chars, expected 16)" || echo "EMAIL_PASSWORD: MISSING"
+          [ -n "$T" ] && echo "EMAIL_TO: present" || echo "EMAIL_TO: MISSING"
+
       - name: Fetch, rank and email new stories
         env:
           EMAIL_HOST: smtp.gmail.com
@@ -44,9 +54,13 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ ! -f state/seen.json ]; then
+            echo "No state file this run (no email sent); nothing to commit."
+            exit 0
+          fi
           git add state/seen.json
           if git diff --cached --quiet; then
-            echo "No new state to commit."
+            echo "No state change to commit."
           else
             git commit -m "chore: update digest seen-state [skip ci]"
             git push
