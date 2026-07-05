@@ -1,15 +1,13 @@
 name: Healthcare AI Radar digest
 
 # Runs in the cloud every 4 hours (independent of your laptop) and emails the
-# stories that are new since the previous run. The "seen" state is committed
-# back so each run only surfaces genuinely new items.
+# stories that are new since the previous run. The "seen" state persists between
+# runs via the Actions cache - NOT committed back to the repo - so the git
+# history stays clean and there is no push race between runs.
 on:
   schedule:
     - cron: "0 */4 * * *"   # every 4 hours, UTC
   workflow_dispatch: {}       # manual "Run workflow" button in the Actions tab
-
-permissions:
-  contents: write             # needed to commit the updated state file
 
 concurrency:
   group: radar-digest
@@ -27,6 +25,17 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      # Restore the previous run's seen-state. The per-run key never matches on
+      # its own, so restore-keys falls back to the most recent "radar-seen-*"
+      # cache. First run finds nothing -> everything counts as new (correct).
+      - name: Restore "seen" state from previous run
+        uses: actions/cache/restore@v4
+        with:
+          path: state/seen.json
+          key: radar-seen-${{ github.run_id }}
+          restore-keys: |
+            radar-seen-
 
       - name: Check email secrets are present (values never printed)
         env:
@@ -50,18 +59,11 @@ jobs:
         # GOOGLE_API_KEY secret if you want LLM-polished summaries in the email.
         run: python main.py run --no-llm --new-only --email
 
-      - name: Commit updated "seen" state
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ ! -f state/seen.json ]; then
-            echo "No state file this run (no email sent); nothing to commit."
-            exit 0
-          fi
-          git add state/seen.json
-          if git diff --cached --quiet; then
-            echo "No state change to commit."
-          else
-            git commit -m "chore: update digest seen-state [skip ci]"
-            git push
-          fi
+      # Persist the updated seen-state under this run's unique key so the next
+      # run restores it. Guarded so a run that wrote no state can't fail here.
+      - name: Save "seen" state for the next run
+        if: ${{ always() && hashFiles('state/seen.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: state/seen.json
+          key: radar-seen-${{ github.run_id }}

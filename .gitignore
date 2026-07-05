@@ -1,9 +1,10 @@
 # Secrets / local config
 .env
 
-# Generated output & logs
+# Generated output, logs & run-to-run state (persisted via CI cache, never git)
 output/
 logs/
+state/
 
 # Python
 __pycache__/

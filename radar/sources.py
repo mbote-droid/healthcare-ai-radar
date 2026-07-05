@@ -35,10 +35,12 @@ except Exception:  # pragma: no cover - import guard
 ARXIV_API = "http://export.arxiv.org/api/query"
 EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
-# HTTP statuses that signal a bot-block worth retrying with impersonation.
-_BLOCK_STATUSES = {403, 429, 503}
-# Server-side statuses worth a plain retry (distinct from bot-blocks).
-_RETRY_STATUSES = {500, 502, 504}
+# Only 403 is a Cloudflare-style challenge that browser TLS impersonation can
+# actually defeat. 429 (rate-limit) and 503 can't be helped by impersonation, so
+# they go through normal backoff/graceful-fail instead of a doomed 30s retry.
+_BLOCK_STATUSES = {403}
+# Server-side / rate-limit statuses worth a plain backoff retry.
+_RETRY_STATUSES = {429, 500, 502, 503, 504}
 
 
 # --------------------------------------------------------------------------- #
