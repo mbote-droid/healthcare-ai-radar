@@ -5,8 +5,10 @@ name: Healthcare AI Radar digest
 # runs via the Actions cache - NOT committed back to the repo - so the git
 # history stays clean and there is no push race between runs.
 on:
-  schedule:
-    - cron: "0 */4 * * *"   # every 4 hours, UTC
+  # Scheduled email delivery is PAUSED (opted out for now). To resume the
+  # automatic every-4-hours emails, uncomment the two schedule lines below.
+  # schedule:
+  #   - cron: "0 */4 * * *"   # every 4 hours, UTC
   workflow_dispatch: {}       # manual "Run workflow" button in the Actions tab
 
 concurrency:
