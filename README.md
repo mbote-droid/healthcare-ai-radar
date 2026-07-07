@@ -91,6 +91,26 @@ variables: `RADAR_LOOKBACK_DAYS`, `RADAR_MAX_ITEMS_PER_SOURCE`,
 `RADAR_HTTP_TIMEOUT`, `ENTREZ_EMAIL` (polite PubMed identification), and the LLM
 settings above. Sources are a simple edit away in the same file.
 
+## Publication Scout
+
+Turn the tracked literature into publication opportunities tailored to your
+background:
+
+```bash
+python main.py scout                 # rank publication opportunities
+python main.py scout --limit 10      # surface more
+python main.py scout --draft         # LLM-draft a grounded abstract each (needs a key)
+```
+
+It clusters recent papers into themes, scores each for how publishable it is for
+*you* (expertise overlap x momentum x source evidence x effort), recommends an
+output type (narrative review / commentary / letter / explainer) and target
+venues, and writes a brief per opportunity - working title, outline, matched
+expertise areas and the real supporting sources - to
+`output/publication_opportunities.md` (+ a JSON sidecar). Configure your
+expertise areas and venues in `config/settings.py`. It maps the terrain; you
+write the actual scholarship.
+
 ## Automated email digests (scheduled)
 
 The included GitHub Actions workflow ([.github/workflows/digest.yml](.github/workflows/digest.yml))

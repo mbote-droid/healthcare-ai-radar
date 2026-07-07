@@ -246,3 +246,113 @@ SCORE_WEIGHTS = {
     "category": 0.20,
     "novelty": 0.15,
 }
+
+# =========================================================================== #
+# Publication Scout
+# The author's areas of demonstrable expertise. The Scout scores each emergent
+# literature theme by how well it overlaps these, so surfaced opportunities are
+# ones the author is genuinely positioned to write about. Keyword matching is
+# prefix/exact aware (see radar.classify._compile_terms).
+# =========================================================================== #
+EXPERTISE_AREAS = {
+    "genomics_variants": {
+        "label": "Genomics & variant interpretation",
+        "keywords": ["tp53", "variant", "mutation", "genomic", "genome",
+                     "germline", "somatic", "pathogenic", "clinvar", "hgvs",
+                     "sequencing", "exome", "alphafold", "esm", "protein structure",
+                     "oncogen", "tumor suppressor", "biomarker"],
+    },
+    "clinical_oncology": {
+        "label": "Clinical oncology",
+        "keywords": ["cancer", "oncolog", "tumor", "tumour", "carcinoma",
+                     "chemotherap", "glioma", "prognos", "metasta", "malignan"],
+    },
+    "clinical_ai": {
+        "label": "Clinical AI & decision support",
+        "keywords": ["clinical decision", "diagnos", "triage", "screening",
+                     "radiolog", "patholog", "ecg", "electronic health",
+                     "clinical trial", "risk prediction", "sepsis"],
+    },
+    "llm_rag": {
+        "label": "LLMs, RAG & agents",
+        "keywords": ["llm", "large language model", "rag", "retrieval augmented",
+                     "agent", "agentic", "foundation model", "prompt", "fine-tun",
+                     "embedding", "multi-agent", "chatbot"],
+    },
+    "surgery": {
+        "label": "Surgery",
+        "keywords": ["surg", "operative", "perioperative", "laparoscop",
+                     "resection", "theatre", "intraoperative"],
+    },
+    "global_health_africa": {
+        "label": "Global health & Africa",
+        "keywords": ["africa", "low resource", "lmic", "equity", "global health",
+                     "kenya", "sub-saharan", "underserved", "disparit"],
+    },
+    "bioinformatics_methods": {
+        "label": "Bioinformatics & ML methods",
+        "keywords": ["pipeline", "benchmark", "dataset", "annotation", "alignment",
+                     "deep learning", "machine learning", "neural network",
+                     "validation", "reproducib", "open source"],
+    },
+}
+
+# Output types the Scout can recommend, each with suggested venues + an effort
+# rating (1 quick .. 3 substantial). Venues chosen to be ones employers and
+# reviewers actually check.
+OUTPUT_TYPES = {
+    "narrative_review": {
+        "label": "Narrative review",
+        "effort": 3,
+        "venues": ["medRxiv / bioRxiv preprint", "Cureus", "JMIR AI",
+                   "PLOS Digital Health"],
+        "when": "several peer-reviewed studies on one theme worth synthesising",
+    },
+    "commentary": {
+        "label": "Commentary / perspective",
+        "effort": 2,
+        "venues": ["medRxiv preprint", "Cureus", "LinkedIn article"],
+        "when": "an emerging or debated topic where an informed viewpoint adds value",
+    },
+    "letter_to_editor": {
+        "label": "Letter to the editor",
+        "effort": 1,
+        "venues": ["the journal of the source paper", "Cureus"],
+        "when": "a single high-impact paper worth a critical, timely response",
+    },
+    "explainer": {
+        "label": "Explainer / thought piece",
+        "effort": 1,
+        "venues": ["Substack", "LinkedIn article", "personal blog"],
+        "when": "a timely development worth translating for a broad audience",
+    },
+}
+
+# Tokens too generic to help theme clustering (every item here is about AI in
+# health, so those words carry no discriminating signal).
+SCOUT_STOPWORDS = {
+    "the", "a", "an", "and", "or", "of", "for", "to", "in", "on", "with",
+    "using", "use", "used", "based", "via", "from", "into", "study", "studies",
+    "analysis", "results", "approach", "method", "methods", "new", "novel",
+    "review", "paper", "research", "model", "models", "data", "system",
+    "systems", "ai", "artificial", "intelligence", "health", "healthcare",
+    "medical", "clinical", "patient", "patients", "care", "learning", "machine",
+    "deep", "large", "language", "human", "human's", "toward", "towards",
+    "evaluation", "assessment", "development", "application", "applications",
+    "this", "that", "these", "those", "how", "what", "why", "can", "may",
+    "are", "is", "was", "were", "be", "been", "being", "our", "their", "its",
+    "clinically", "automatically", "characterization", "built", "extraction",
+    "framework", "understanding", "enabled", "aware", "guided", "driven",
+}
+
+SCOUT_MIN_SIMILARITY: float = _env_float("RADAR_SCOUT_SIMILARITY", 0.12)
+SCOUT_MIN_TOKENS: int = _env_int("RADAR_SCOUT_MIN_TOKENS", 3)
+SCOUT_MAX_OPPORTUNITIES: int = _env_int("RADAR_SCOUT_MAX_OPPS", 8)
+
+# Publishability score weights. 'effort' is inverted (quicker wins rank higher).
+SCOUT_WEIGHTS = {
+    "expertise": 0.40,   # overlap with the author's areas
+    "momentum": 0.30,    # freshness + novelty + how many articles cluster
+    "evidence": 0.20,    # credibility of the underlying sources
+    "effort": 0.10,      # inverse effort of the recommended output
+}

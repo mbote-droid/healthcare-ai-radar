@@ -4,7 +4,8 @@ A numbered, plain-language trace of what actually happens when you run the tool,
 from the command line back to a written digest. This describes the *pipeline*
 (the cascade of events under the hood), not the *why* (see README.md).
 
-Entry point: `python main.py run`
+Entry points: `python main.py run` (the news digest) and `python main.py scout`
+(publication opportunities - see the Publication Scout section below).
 
 ---
 
@@ -94,10 +95,39 @@ Entry point: `python main.py run`
 23. **State update**: only after a *successful* send are the new keys recorded
     (and old ones pruned by age) and the state saved. A failed email therefore
     retries those stories next run instead of losing them.
-24. **Scheduling**: the GitHub Actions workflow runs steps 1-23 every 4 hours in
-    the cloud with `--new-only --email`, then commits the updated `seen.json` so
-    the next run knows what was already delivered. No always-on server; each run
-    is a one-shot fetch-and-send on a timer.
+24. **Scheduling**: a GitHub Actions workflow can run steps 1-23 on a timer in
+    the cloud with `--new-only --email`. Between runs the `seen.json` state is
+    persisted via the Actions **cache** (restored at the start, saved at the end)
+    - not committed back - so history stays clean and runs never race on a push.
+    No always-on server; each run is a one-shot fetch-and-send on a timer.
+
+---
+
+## Publication Scout (`python main.py scout`)
+The Scout reuses stages 1-6 (fetch -> filter -> dedup -> classify -> rank), then
+mines the ranked literature for things *you* could publish:
+
+25. **Cluster** (`radar.scout.cluster_articles`): articles are grouped into
+    emergent themes by title-token overlap (Jaccard, seed-linkage anchored by the
+    highest-ranked article). Title-only tokens keep themes coherent; domain-
+    generic words are stopworded so clusters form around specifics.
+26. **Score each theme** (`score_opportunity`) on four normalised signals:
+    **expertise** (overlap with the author's configured areas), **momentum**
+    (freshness + novelty + cluster size), **evidence** (source credibility) and
+    **effort** (inverse of the recommended output's effort). Weighted 0-100.
+27. **Choose an output type**: several peer-reviewed papers on one theme -> a
+    narrative review; a single strong paper -> a letter to the editor; a
+    controversy or novel development -> a commentary; otherwise an explainer.
+28. **Build a brief**: theme label (led by the matched expertise area), a
+    suggested title, target venues, an outline, the matched expertise areas, a
+    rationale, and the supporting sources (real fetched items only).
+29. **Optional grounded abstract** (`--draft`): if an LLM is configured, a short
+    abstract is drafted from the sources under the same strict JSON guardrail and
+    no-fabrication prompt used for summaries; absent an LLM it is skipped.
+30. **Render** (`radar.scout.write_report`): opportunities are ranked best-first,
+    capped, and written to `output/publication_opportunities.md` (+ a `.json`
+    sidecar). The report states plainly that it maps the terrain - you write the
+    actual scholarship.
 
 ## Failure behaviour (graceful degradation, by design)
 - No network -> every fetch returns empty, the run still completes and writes an

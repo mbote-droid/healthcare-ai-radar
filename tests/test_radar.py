@@ -15,8 +15,8 @@ import pytest
 import main
 from config import settings
 from radar import (
-    classify, dedup, email_render, emailer, pipeline, render, score, sources,
-    summarise,
+    classify, dedup, email_render, emailer, pipeline, render, score, scout,
+    sources, summarise,
 )
 from radar.models import Article, Digest, normalise_title
 from radar.state import SeenStore
@@ -671,3 +671,122 @@ class TestDeliver:
         digest = Digest(generated_at=now, articles=[a])
         main._deliver(digest, new_only=True, do_email=True, now=now)
         assert calls["n"] == 0  # nothing new -> no send
+
+
+# --------------------------------------------------------------------------- #
+class TestScout:
+    def _peer(self, title, summary=""):
+        return mk(title=title, summary=summary, tier="peer_reviewed")
+
+    def test_tokenize_drops_stopwords_and_short(self):
+        toks = scout._tokenize("The AI model for breast cancer screening")
+        assert "cancer" in toks and "screening" in toks
+        assert "ai" not in toks and "model" not in toks and "the" not in toks
+
+    def test_jaccard(self):
+        assert scout._jaccard({"a", "b"}, {"b", "c"}) == 1 / 3
+        assert scout._jaccard(set(), {"a"}) == 0.0
+
+    def test_cluster_groups_similar_separates_different(self):
+        a1 = mk(title="AI model for breast cancer screening mammography", summary="")
+        a2 = mk(title="Deep learning breast cancer detection in mammography", summary="")
+        a3 = mk(title="LLM chatbot mental wellness coaching tool", summary="")
+        clusters = scout.cluster_articles([a1, a2, a3], threshold=0.15)
+        assert sorted(c.size() for c in clusters) == [1, 2]
+
+    def test_cluster_skips_token_thin_titles(self):
+        thin = mk(title="A new study", summary="")  # all stopwords -> skipped
+        assert scout.cluster_articles([thin]) == []
+
+    def test_expertise_match_detects_area(self):
+        c = scout.Cluster(articles=[mk(title="TP53 variant interpretation in cancer genomics",
+                                       summary="")])
+        score_val, labels = scout._expertise_match(c)
+        assert score_val > 0
+        assert "Genomics & variant interpretation" in labels
+
+    def test_choose_output_narrative_review(self):
+        c = scout.Cluster(articles=[
+            self._peer("AI breast cancer screening trial one"),
+            self._peer("AI breast cancer screening trial two"),
+            self._peer("AI breast cancer screening trial three"),
+        ])
+        assert scout._choose_output_type(c) == "narrative_review"
+
+    def test_choose_output_letter_for_single_paper(self):
+        c = scout.Cluster(articles=[self._peer("A single randomized AI trial")])
+        assert scout._choose_output_type(c) == "letter_to_editor"
+
+    def test_choose_output_explainer_default(self):
+        c = scout.Cluster(articles=[mk(title="AI tool launches", tier="blog", summary="")])
+        assert scout._choose_output_type(c) == "explainer"
+
+    def test_score_opportunity_bounds_and_fields(self):
+        c = scout.Cluster(articles=[
+            self._peer("TP53 variant classification with deep learning"),
+            self._peer("Genomic variant interpretation via neural networks"),
+        ])
+        brief = scout.score_opportunity(c)
+        assert 0.0 <= brief.score <= 100.0
+        assert set(brief.score_breakdown) == {"expertise", "momentum", "evidence", "effort"}
+        assert brief.suggested_title and brief.outline and brief.target_venues
+
+    def test_scout_ranks_and_caps(self):
+        arts = [
+            self._peer("TP53 variant interpretation genomics one"),
+            self._peer("TP53 variant interpretation genomics two"),
+            mk(title="Hospital billing software update", tier="blog", summary=""),
+            mk(title="Telehealth reimbursement policy shift", tier="blog", summary=""),
+        ]
+        briefs = scout.scout(arts, limit=2)
+        assert len(briefs) <= 2
+        scores = [b.score for b in briefs]
+        assert scores == sorted(scores, reverse=True)  # ranked best-first
+
+    def test_scout_briefs_never_have_empty_fields(self):
+        briefs = scout.scout([self._peer("AI sepsis prediction in the ICU")])
+        for b in briefs:
+            assert b.theme and b.suggested_title and b.outline and b.target_venues
+
+    def test_draft_abstract_none_without_llm(self, monkeypatch):
+        monkeypatch.setattr(summarise, "_get_llm", lambda: None)
+        b = scout.score_opportunity(scout.Cluster(articles=[self._peer("AI trial")]))
+        assert scout.draft_abstract(b) is False and b.abstract == ""
+
+    def test_draft_abstract_valid_json(self, monkeypatch):
+        monkeypatch.setattr(
+            summarise, "_get_llm",
+            lambda: lambda prompt: '{"title": "Refined Title", "abstract": "A grounded abstract."}')
+        b = scout.score_opportunity(scout.Cluster(articles=[self._peer("AI trial")]))
+        assert scout.draft_abstract(b) is True
+        assert b.abstract == "A grounded abstract."
+        assert b.suggested_title == "Refined Title"
+
+    def test_draft_abstract_bad_json_falls_back(self, monkeypatch):
+        monkeypatch.setattr(summarise, "_get_llm", lambda: lambda prompt: "not json")
+        b = scout.score_opportunity(scout.Cluster(articles=[self._peer("AI trial")]))
+        assert scout.draft_abstract(b) is False
+
+    def test_render_report_has_theme_and_handles_empty(self):
+        now = datetime(2025, 7, 1, tzinfo=UTC)
+        briefs = scout.scout([self._peer("TP53 variant interpretation in cancer")])
+        md = scout.render_report(briefs, now)
+        assert "# Publication Radar" in md and briefs[0].theme in md
+        empty_md = scout.render_report([], now)
+        assert "No publication opportunities" in empty_md
+
+    def test_write_report_creates_files(self, tmp_path):
+        now = datetime(2025, 7, 1, tzinfo=UTC)
+        briefs = scout.scout([self._peer("AI ECG diagnosis validation study")])
+        paths = scout.write_report(briefs, now, out_dir=tmp_path)
+        assert paths["markdown"].exists() and paths["json"].exists()
+
+    def test_cli_scout_returns_zero(self, monkeypatch, tmp_path):
+        now = datetime(2025, 7, 1, tzinfo=UTC)
+        art = self._peer("AI variant interpretation genomics study")
+        digest = Digest(generated_at=now, articles=[art])
+        monkeypatch.setattr(pipeline, "run", lambda **kw: digest)
+        monkeypatch.setattr(scout, "write_report",
+                            lambda b, n, **kw: {"markdown": tmp_path / "p.md",
+                                                "json": tmp_path / "p.json"})
+        assert main.main(["scout"]) == 0

@@ -13,7 +13,8 @@ import argparse
 import sys
 from datetime import datetime, timezone
 
-from radar import email_render, emailer, pipeline, render
+from config import settings
+from radar import email_render, emailer, pipeline, render, scout
 from radar.logconf import configure_logging, log
 from radar.models import Article, Digest
 from radar.state import SeenStore
@@ -36,7 +37,36 @@ def _build_parser() -> argparse.ArgumentParser:
                        help="only consider stories not seen in a previous run")
     run_p.add_argument("--email", action="store_true",
                        help="email the digest (requires EMAIL_* env vars)")
+
+    scout_p = sub.add_parser(
+        "scout", help="find publication opportunities from the fetched literature")
+    scout_p.add_argument("--limit", type=int, default=settings.SCOUT_MAX_OPPORTUNITIES,
+                         help="max publication opportunities to surface")
+    scout_p.add_argument("--draft", action="store_true",
+                         help="LLM-draft a grounded abstract per opportunity "
+                              "(requires GOOGLE_API_KEY)")
     return parser
+
+
+def _cmd_scout(args: argparse.Namespace, now: datetime) -> int:
+    """Run the pipeline, then mine it for publication opportunities."""
+    try:
+        digest = pipeline.run(llm_limit=0, now=now)  # scout needs no per-item LLM
+    except Exception as exc:
+        log.error(f"Run failed: {exc}")
+        return 1
+
+    briefs = scout.scout(
+        digest.articles,
+        draft=getattr(args, "draft", False),
+        limit=getattr(args, "limit", settings.SCOUT_MAX_OPPORTUNITIES),
+    )
+    paths = scout.write_report(briefs, now)
+    log.info("Top publication opportunities:")
+    for b in briefs[:5]:
+        log.info(f"  [{b.score:>3.0f}] {b.output_label}: {b.theme}")
+    log.info(f"Report written: {paths['markdown']}")
+    return 0
 
 
 def _deliver(digest: Digest, new_only: bool, do_email: bool,
@@ -83,15 +113,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     # Default to 'run' when invoked with no subcommand.
-    if args.command not in ("run", None):
+    if args.command not in ("run", "scout", None):
         parser.print_help()
         return 2
+
+    now = datetime.now(timezone.utc)
+    if args.command == "scout":
+        return _cmd_scout(args, now)
 
     top_n = getattr(args, "top_n", 10)
     llm_limit = 0 if getattr(args, "no_llm", False) else getattr(args, "llm_limit", 12)
     new_only = getattr(args, "new_only", False)
     do_email = getattr(args, "email", False)
-    now = datetime.now(timezone.utc)
 
     try:
         digest = pipeline.run(llm_limit=llm_limit, now=now)
