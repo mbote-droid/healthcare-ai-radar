@@ -1,5 +1,11 @@
 # Healthcare AI Radar
 
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)](https://www.python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Digest](https://github.com/mbote-droid/healthcare-ai-radar/actions/workflows/digest.yml/badge.svg)](https://github.com/mbote-droid/healthcare-ai-radar/actions/workflows/digest.yml)
+[![Live Radar](https://img.shields.io/badge/Live-Radar-0d9488?logo=vercel&logoColor=white)](https://portfolio-sam-mbote.vercel.app/radar)
+
+
 A lightweight, offline-friendly intelligence pipeline that tracks healthcare-AI
 news, research and regulatory activity, ranks it by a transparent **Scoop
 Score**, and writes a newsletter-ready digest.
