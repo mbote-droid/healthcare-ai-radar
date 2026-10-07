@@ -151,7 +151,7 @@ even on a public repo.
 python -m pytest tests/ -q
 ```
 
-73 tests, fully offline (HTTP mocked, feeds parsed from in-memory XML, the LLM
+90 tests, fully offline (HTTP mocked, feeds parsed from in-memory XML, the LLM
 tier stubbed). They cover models, relevance/classification, scoring, dedup,
 summarisation guardrails, every fetcher's parse and graceful-degradation paths,
 rendering, and an end-to-end pipeline run.
