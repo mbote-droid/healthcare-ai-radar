@@ -1,5 +1,6 @@
 # Healthcare AI Radar
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23267259.svg)](https://doi.org/10.5281/zenodo.23267259)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Digest](https://github.com/mbote-droid/healthcare-ai-radar/actions/workflows/digest.yml/badge.svg)](https://github.com/mbote-droid/healthcare-ai-radar/actions/workflows/digest.yml)
